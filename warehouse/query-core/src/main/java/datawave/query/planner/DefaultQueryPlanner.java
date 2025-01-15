@@ -949,6 +949,9 @@ public class DefaultQueryPlanner extends QueryPlanner implements Cloneable {
 
         TraceStopwatch stopwatch = null;
 
+        // need to fetch field to datatype map first
+        timedFetchDatatypes(timers, "Fetch Required Datatypes", config.getQueryTree(), config);
+
         if (!disableWhindexFieldMappings) {
             // apply the value-specific field mappings for GeoWave functions
             config.setQueryTree(timedApplyWhindexFieldMappings(timers, config.getQueryTree(), config, metadataHelper, settings));
@@ -961,8 +964,14 @@ public class DefaultQueryPlanner extends QueryPlanner implements Cloneable {
 
         // apply the node transform rules
         // running it here before any unfielded expansions to enable potentially pushing down terms before index lookups
+        // need to run this before normalization expansion otherwise nasty regexes could slip through
         config.setQueryTree(timedApplyNodeTransformRules(timers, "Apply Node Transform Rules - Pre Unfielded Expansions", config.getQueryTree(), config,
                         metadataHelper, getTransformRules()));
+
+        // must expand multi-normalized terms after index queries but before index expansion
+        // for example, f:includeText(_ANYFIELD_, 'value') would get missed by the multi normalizer visitor, but expanding it first allows the EQ node to get
+        // expanded
+        config.setQueryTree(timedExpandMultiNormalizedTerms(timers, config.getQueryTree(), config, metadataHelper));
 
         // Find unfielded terms, and fully qualify them with an OR of all fields
         // found in the index
@@ -989,11 +998,7 @@ public class DefaultQueryPlanner extends QueryPlanner implements Cloneable {
         config.setQueryTree(timedApplyNodeTransformRules(timers, "Apply Node Transform Rules - Pre Regex/Range Expansions", config.getQueryTree(), config,
                         metadataHelper, getTransformRules()));
 
-        timedFetchDatatypes(timers, "Fetch Required Datatypes", config.getQueryTree(), config);
-
         config.setQueryTree(timedFixUnindexedNumerics(timers, config.getQueryTree(), config));
-
-        config.setQueryTree(timedExpandMultiNormalizedTerms(timers, config.getQueryTree(), config, metadataHelper));
 
         // if we have any index holes, then mark em
         if (!config.getIndexHoles().isEmpty()) {
@@ -1104,6 +1109,9 @@ public class DefaultQueryPlanner extends QueryPlanner implements Cloneable {
                 log.debug("Bounded range and regex conversion has been disabled");
             }
         }
+
+        // fields may have been added or removed from the query, need to update the field to type map
+        timedFetchDatatypes(timers, "Fetch Required Datatypes", config.getQueryTree(), config);
 
         return config.getQueryTree();
     }
@@ -3167,7 +3175,7 @@ public class DefaultQueryPlanner extends QueryPlanner implements Cloneable {
                     Multimap<String,Type<?>> normalizedFieldMap, ShardQueryConfiguration config) {
         config.setIndexedFields(indexedFields);
         config.setReverseIndexedFields(reverseIndexedFields);
-        config.setQueryFieldsDatatypes(queryFieldMap);
+        updateQueryFieldsDatatypes(config, queryFieldMap);
         config.setNormalizedFieldsDatatypes(normalizedFieldMap);
     }
 
@@ -3182,7 +3190,9 @@ public class DefaultQueryPlanner extends QueryPlanner implements Cloneable {
 
         log.debug("normalizedFields = " + normalizedFields);
 
-        config.setQueryFieldsDatatypes(HashMultimap.create(Multimaps.filterKeys(fieldToDatatypeMap, input -> !normalizedFields.contains(input))));
+        Multimap<String,Type<?>> queryFieldToDatatypeMap = HashMultimap
+                        .create(Multimaps.filterKeys(fieldToDatatypeMap, input -> !normalizedFields.contains(input)));
+        updateQueryFieldsDatatypes(config, queryFieldToDatatypeMap);
         log.debug("IndexedFields Datatypes: " + config.getQueryFieldsDatatypes());
 
         config.setNormalizedFieldsDatatypes(HashMultimap.create(Multimaps.filterKeys(fieldToDatatypeMap, normalizedFields::contains)));
@@ -3195,7 +3205,12 @@ public class DefaultQueryPlanner extends QueryPlanner implements Cloneable {
         }
 
         return fieldToDatatypeMap;
+    }
 
+    protected void updateQueryFieldsDatatypes(ShardQueryConfiguration config, Multimap<String,Type<?>> queryFieldMap) {
+        Multimap<String,Type<?>> queryFieldToDatatypeMap = config.getQueryFieldsDatatypes();
+        queryFieldToDatatypeMap.putAll(queryFieldMap);
+        config.setQueryFieldsDatatypes(queryFieldToDatatypeMap);
     }
 
     public void setDisableTestNonExistentFields(boolean disableTestNonExistentFields) {

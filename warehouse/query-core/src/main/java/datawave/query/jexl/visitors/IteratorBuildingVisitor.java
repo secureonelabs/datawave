@@ -638,7 +638,6 @@ public class IteratorBuildingVisitor extends BaseVisitor {
             builder.setQueryId(queryId);
             builder.setSource(deepCopySource());
             builder.setTypeMetadata(typeMetadata);
-            builder.setFieldsToAggregate(fieldsToAggregate);
             builder.setTimeFilter(timeFilter);
             builder.setDatatypeFilter(getDatatypeFilter());
             builder.setKeyTransform(getFiAggregator());
@@ -740,11 +739,10 @@ public class IteratorBuildingVisitor extends BaseVisitor {
         builder.setSource(getSourceIterator(node, isNegation));
         builder.setTimeFilter(getTimeFilter(node));
         builder.setTypeMetadata(typeMetadata);
-        builder.setFieldsToAggregate(fieldsToAggregate);
         builder.setDatatypeFilter(getDatatypeFilter());
         builder.setKeyTransform(getFiAggregator());
         builder.setEnv(env);
-        builder.forceDocumentBuild(!limitLookup && this.isQueryFullySatisfied);
+        builder.buildDocument(shouldBuildDocument(builder.getField()));
         builder.setNode(node);
     }
 
@@ -919,7 +917,6 @@ public class IteratorBuildingVisitor extends BaseVisitor {
         builder.setField(identifier);
         builder.setTimeFilter(TimeFilter.alwaysTrue());
         builder.setTypeMetadata(typeMetadata);
-        builder.setFieldsToAggregate(fieldsToAggregate);
         builder.setDatatypeFilter(getDatatypeFilter());
         builder.setKeyTransform(getFiAggregator());
         builder.setEnv(env);
@@ -947,7 +944,6 @@ public class IteratorBuildingVisitor extends BaseVisitor {
         builder.setQueryId(queryId);
         builder.setTimeFilter(getTimeFilter(node));
         builder.setTypeMetadata(typeMetadata);
-        builder.setFieldsToAggregate(fieldsToAggregate);
         builder.setDatatypeFilter(getDatatypeFilter());
         builder.setKeyTransform(getFiAggregator());
         builder.setEnv(env);
@@ -1095,7 +1091,7 @@ public class IteratorBuildingVisitor extends BaseVisitor {
             throw new DatawaveFatalQueryException(qe);
         }
         builder.negateAsNeeded(data);
-        builder.forceDocumentBuild(!limitLookup && this.isQueryFullySatisfied);
+        builder.buildDocument(shouldBuildDocument(builder.getField()));
         ivarate(builder, rootNode, sourceNode, data);
     }
 
@@ -1168,7 +1164,7 @@ public class IteratorBuildingVisitor extends BaseVisitor {
         }
 
         builder.negateAsNeeded(data);
-        builder.forceDocumentBuild(!limitLookup && this.isQueryFullySatisfied);
+        builder.buildDocument(shouldBuildDocument(builder.getField()));
 
         ivarate(builder, rootNode, sourceNode, data);
     }
@@ -1230,7 +1226,8 @@ public class IteratorBuildingVisitor extends BaseVisitor {
                             MessageFormat.format("{0}", "ExceededValueThresholdMarkerJexlNode"));
             throw new DatawaveFatalQueryException(qe);
         }
-        builder.forceDocumentBuild(!limitLookup && this.isQueryFullySatisfied);
+
+        builder.buildDocument(shouldBuildDocument(builder.getField()));
         ivarate(builder, rootNode, sourceNode, data);
     }
 
@@ -1445,7 +1442,6 @@ public class IteratorBuildingVisitor extends BaseVisitor {
         builder.setTypeMetadata(typeMetadata);
         builder.setCompositeMetadata(compositeMetadata);
         builder.setCompositeSeekThreshold(compositeSeekThreshold);
-        builder.setFieldsToAggregate(fieldsToAggregate);
         builder.setDatatypeFilter(getDatatypeFilter());
         builder.setKeyTransform(getFiAggregator());
         builder.setIvaratorCacheDirs(getIvaratorCacheDirs());
@@ -1488,6 +1484,26 @@ public class IteratorBuildingVisitor extends BaseVisitor {
                 checkForSatisfactionError();
             }
         }
+    }
+
+    /**
+     * A document should be aggregated if this is a shard range query and the field index fully satisfies the query, OR if the field is in the list of fields to
+     * aggregate (typically index only or non-event fields).
+     *
+     * @return true if documents need to be built
+     */
+    protected boolean shouldBuildDocument(String field) {
+        if (field == null) {
+            throw new IllegalStateException("Must specify a field in order to determine if documents are built");
+        }
+
+        // historically this check always ran first
+        if (!limitLookup && this.isQueryFullySatisfied) {
+            return true;
+        }
+
+        // historically this check was a fail-safe
+        return fieldsToAggregate != null && fieldsToAggregate.contains(field);
     }
 
     protected void checkForSatisfactionError() {

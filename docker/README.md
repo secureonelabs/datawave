@@ -186,7 +186,7 @@ Build the Datawave Quickstart docker image using the following build command:
 
 ```
 # To build the quickstart docker image, and all of the microservice images, run this
-mvn -Pcompose -services -Dmicroservice-docker -Dquickstart-docker -Ddeploy -Dtar -Ddist -DskipTests clean install -T1C
+mvn -Pcompose -Dservices -Dmicroservice-docker -Dquickstart-docker -Ddeploy -Dtar -Ddist -DskipTests clean install -T1C
 
 # To build just the quickstart docker image, run this
 mvn -Pcompose -Dquickstart-docker -Ddeploy -Dtar -Ddist -DskipTests clean install -T1C

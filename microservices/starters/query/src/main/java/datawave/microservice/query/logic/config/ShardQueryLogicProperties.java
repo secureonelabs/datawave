@@ -107,15 +107,15 @@ public class ShardQueryLogicProperties {
     public void setFilterOptions(Map<String,String> filterOptions) {
         this.filterOptions = filterOptions;
     }
-
+    
     public List<IvaratorCacheDirConfig> getLocalIvaratorCacheDirConfigs() {
         return localIvaratorCacheDirConfigs;
     }
-
+    
     public void setLocalIvaratorCacheDirConfigs(List<IvaratorCacheDirConfig> ivaratorCacheDirConfigs) {
         this.localIvaratorCacheDirConfigs = ivaratorCacheDirConfigs;
     }
-
+    
     public List<IvaratorCacheDirConfig> getIvaratorCacheDirConfigs() {
         return ivaratorCacheDirConfigs;
     }
